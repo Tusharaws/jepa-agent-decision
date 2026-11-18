@@ -7,6 +7,21 @@ This repo tests that question in two settings:
 1. **ALFWorld**, a text household game. An LLM proposes 5 candidate actions per step, and a learned selector picks one.
 2. **AgentProcessBench**, real agent runs with human per-step labels. Here a judge scores whether a tool call is correct, given the call, its real result, or a predicted result.
 
+## Key finding: predicting the result helps on stateful tools
+
+On **tau2**, whose stateful customer-service tools (bookings, orders, accounts) were never seen in training, the LeJEPA predictor + CLM-style projection heads clearly beat judging the call alone:
+
+| Judge, tested on held-out tau2 | Judges the call only | Judges the **predicted** result (LeJEPA predictor) | Judges the real result (ceiling) |
+|---|---|---|---|
+| CLM-style projection heads | 0.489 | **0.662** (+0.173 [+0.119, +0.230]) | 0.666 |
+| Plain MLP | 0.724 | **0.827** (+0.103 [+0.070, +0.130]) | 0.855 |
+
+AUC of correct vs incorrect steps; 3 seeds; 95% bootstrap intervals over tasks.
+
+- **Why it helps on stateful tools:** the outcome of a stateful call depends on hidden state, such as whether that order exists or the booking can be changed, which the call text alone doesn't show.
+- **How much it recovers:** the predictor learns this from other tools. With CLM's heads it recovers essentially all of what the real result is worth; with the plain MLP it recovers about 80%.
+- **On the lookup-style sources** (bfcl, gaia, hotpotqa) and on tasks like the training data, there is no gain. Knowing even the real result adds little there.
+
 ## Results in brief
 
 | Question | Answer |
@@ -14,10 +29,12 @@ This repo tests that question in two settings:
 | Does a learned selector beat the LLM's own first choice? (ALFWorld) | Yes. The decision model raised useful picks from 28.0% to 41.5% offline, and games won from 63.4% to 72.4% online. |
 | Is the JEPA arm better than the decision model? (ALFWorld) | No. It was 3.9 points behind offline and won 6.0 points fewer games online. |
 | Does 2-step lookahead through the world model help? (ALFWorld) | No. |
-| Does judging the *predicted* result beat judging the call? (AgentProcessBench) | Only on unseen stateful tools. On held-out tau2 the AUC rose from 0.724 to 0.827 (+0.10 [+0.07, +0.13]). It made no difference on the other sources. |
+| Does judging the *predicted* result beat judging the call? (AgentProcessBench) | **Yes, on unseen stateful tools (tau2).** CLM heads +0.17 AUC, MLP +0.10. No gain on the lookup-style sources. |
 | Does LeJEPA's SIGReg regulariser help? | No. With a frozen encoder it does nothing at small weights and hurts at large ones. |
 
-Practical reading: a decision model is enough for most tools. Predicting the result pays off only when the tool's response depends on hidden state that the call text does not reveal.
+Practical reading:
+- **For stateful tools** (where the response depends on hidden state), put a LeJEPA-style result predictor in front of the judge.
+- **For stateless lookup tools,** a decision model that judges the call alone is enough.
 
 Full details, tables and confidence intervals:
 - [Implementation Plan.md](Implementation%20Plan.md): ALFWorld, Phases 0–5.
