@@ -12,3 +12,6 @@ wheels/
 # Experiment data
 data/
 results/
+
+# Paper drafts (kept local)
+paper/
